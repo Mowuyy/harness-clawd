@@ -11,22 +11,26 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .base import Tool
+from context.context import context
 
 logger = logging.getLogger(__name__)
 
-# 模块级工作目录，由 init() 在启动时设置
-_workdir: Path = Path.cwd()
+_WORKDIR_KEY = "workdir"
 
 # templates 目录位于包根目录（tools/ 的上一级）
 _TEMPLATES_DIR: Path = Path(__file__).parent.parent / "templates"
 
 
+def get_workdir() -> Path:
+    """返回当前协程上下文的工作目录。未初始化时回退到进程 cwd。"""
+    return context.get(_WORKDIR_KEY, Path.cwd())
+
+
 def init(workdir: Path) -> None:
-    """初始化文件系统工作目录。
+    """初始化文件系统工作目录（写入当前协程上下文）。
 
     若 workdir 不存在，则先创建目录，再将 templates/ 中的所有内容复制进去。
     """
-    global _workdir
     if not workdir.exists():
         workdir.mkdir(parents=True, exist_ok=True)
         if _TEMPLATES_DIR.is_dir():
@@ -39,7 +43,7 @@ def init(workdir: Path) -> None:
             logger.info("Initialized workdir from templates: %s", workdir)
         else:
             logger.warning("templates/ directory not found at %s, skipping copy", _TEMPLATES_DIR)
-    _workdir = workdir
+    context.set(_WORKDIR_KEY, workdir)
 
 
 # ---------------------------------------------------------------------------
@@ -47,8 +51,9 @@ def init(workdir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def safe_path(p: str) -> Path:
-    path = (_workdir / p).resolve()
-    if not path.is_relative_to(_workdir):
+    workdir = get_workdir()
+    path = (workdir / p).resolve()
+    if not path.is_relative_to(workdir):
         raise ValueError(f"Path escapes workspace: {p}")
     return path
 
@@ -63,7 +68,7 @@ def run_bash(command: str) -> str:
         return "Error: Dangerous command blocked"
     try:
         r = subprocess.run(
-            command, shell=True, cwd=_workdir,
+            command, shell=True, cwd=get_workdir(),
             capture_output=True, text=True, timeout=120,
         )
         out = (r.stdout + r.stderr).strip()
@@ -145,7 +150,7 @@ class BashTool(Tool):
                 command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=_workdir,
+                cwd=get_workdir(),
             )
             try:
                 stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)

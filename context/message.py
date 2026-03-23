@@ -22,6 +22,7 @@ Module-level ``build_*`` aliases are kept for backward compatibility.
 
 from __future__ import annotations
 
+import json
 import platform
 from datetime import datetime
 from pathlib import Path
@@ -66,7 +67,11 @@ class Message:
                     "type": "function",
                     "function": {
                         "name": tc.function.name,
-                        "arguments": tc.function.arguments,
+                        "arguments": (
+                            json.dumps(tc.function.arguments, ensure_ascii=False)
+                            if isinstance(tc.function.arguments, dict)
+                            else tc.function.arguments
+                        ),
                     },
                 }
                 for tc in msg.tool_calls

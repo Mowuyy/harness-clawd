@@ -29,6 +29,7 @@ from context import (
     ContextBuilder,
     Message,
 )
+from context.context import context as _ctx_store
 from llm import LLMProvider
 from tools import (
     BackgroundManager,
@@ -219,7 +220,7 @@ class AgentLoop:
                     max_tokens=self.cfg.max_tokens,
                 )
             except Exception as exc:
-                logger.error("LLM call failed: %s", exc)
+                logger.exception("LLM call failed: %s", exc)
                 final_content = f"Error calling LLM: {exc}"
                 break
 
@@ -303,6 +304,7 @@ class AgentLoop:
         通过 asyncio.Lock 序列化并发调用。
         """
         async with self._processing_lock:
+            _ctx_store.reset()
             final_content, updated = await self._run_agent_loop(messages)
             messages[:] = updated
             if final_content:
@@ -341,11 +343,10 @@ class AgentLoop:
             print()
 
 
-# ---------------------------------------------------------------------------
-async def _main() -> None:
-    agent = AgentLoop()
-    await agent.repl()
-
-
 if __name__ == "__main__":
+    async def _main() -> None:
+        from config import Config
+        agent = AgentLoop(Config(user_id="test_user"))
+        await agent.repl()
+
     asyncio.run(_main())

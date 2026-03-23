@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 # ---------------------------------------------------------------------------
 # 嵌套配置模型
@@ -81,7 +81,18 @@ class Config(BaseModel):
     web_search: WebSearchConfig = Field(default_factory=WebSearchConfig)
 
     # ------------------------------------------------------------------ Paths
-    workdir: Path = Field(default_factory=lambda: Path(os.getenv("HARNESS_WORKDIR", str(Path.cwd() / "workspace"))))
+    user_id: str = Field(
+        default_factory=lambda: os.getenv("HARNESS_USER_ID", "default")
+    )
+    workdir_base: Path = Field(
+        default_factory=lambda: Path(os.getenv("HARNESS_WORKDIR", str(Path.cwd() / "workspace")))
+    )
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def workdir(self) -> Path:
+        """用户隔离的工作目录：workdir_base / user_id。"""
+        return self.workdir_base / self.user_id
 
     # ---------------------------------------------- Backward-compatible aliases
     @property
