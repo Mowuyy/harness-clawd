@@ -1,6 +1,6 @@
 """Teammate（多 Agent 团队）管理工具。
 
-涵盖: SpawnTeammateTool, ListTeammatesTool
+涵盖: TeamTool（二级意图路由）
 所有工具继承自 tools.base.Tool。
 """
 import asyncio
@@ -311,56 +311,52 @@ class TeammateManager:
 # Tool 子类
 # ---------------------------------------------------------------------------
 
-class SpawnTeammateTool(Tool):
-    """派生持久化自主队友。"""
+class TeamTool(Tool):
+    """团队管理统一入口，通过 action 二级路由分发。"""
 
     def __init__(self, team_mgr: TeammateManager):
         self._mgr = team_mgr
 
     @property
     def name(self) -> str:
-        return "spawn_teammate"
+        return "team"
 
     @property
     def description(self) -> str:
-        return "Spawn a persistent autonomous teammate."
+        return "Team operations with action routing: spawn/list."
 
     @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "Teammate name"},
-                "role": {"type": "string", "description": "Teammate role description"},
-                "prompt": {"type": "string", "description": "Initial task prompt"},
+                "action": {
+                    "type": "string",
+                    "enum": ["spawn", "list"],
+                    "description": "Team action to perform",
+                },
+                "name": {"type": "string", "description": "Teammate name (spawn)"},
+                "role": {"type": "string", "description": "Teammate role (spawn)"},
+                "prompt": {"type": "string", "description": "Initial prompt (spawn)"},
             },
-            "required": ["name", "role", "prompt"],
+            "required": ["action"],
         }
 
-    async def execute(self, name: str, role: str, prompt: str, **kwargs: Any) -> str:
-        return self._mgr.spawn(name, role, prompt)
-
-
-class ListTeammatesTool(Tool):
-    """列出所有队友及其状态。"""
-
-    def __init__(self, team_mgr: TeammateManager):
-        self._mgr = team_mgr
-
-    @property
-    def name(self) -> str:
-        return "list_teammates"
-
-    @property
-    def description(self) -> str:
-        return "List all teammates."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {"type": "object", "properties": {}}
-
-    async def execute(self, **kwargs: Any) -> str:
-        return self._mgr.list_all()
+    async def execute(
+        self,
+        action: str,
+        name: str = "",
+        role: str = "",
+        prompt: str = "",
+        **kwargs: Any,
+    ) -> str:
+        if action == "spawn":
+            if not name or not role or not prompt:
+                return "Error: name, role, prompt are required for spawn"
+            return self._mgr.spawn(name, role, prompt)
+        if action == "list":
+            return self._mgr.list_all()
+        return f"Error: Unknown action '{action}'"
 
 
 # ---------------------------------------------------------------------------
@@ -369,6 +365,5 @@ class ListTeammatesTool(Tool):
 
 def build_tools(team_mgr: TeammateManager) -> list[Tool]:
     return [
-        SpawnTeammateTool(team_mgr),
-        ListTeammatesTool(team_mgr),
+        TeamTool(team_mgr),
     ]

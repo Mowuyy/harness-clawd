@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minimal validator for nanobot skill folders.
+Minimal validator for skill folders.
 """
 
 import re

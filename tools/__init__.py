@@ -44,11 +44,11 @@ class ToolRegistry:
         """返回 OpenAI function-calling 格式的工具定义列表。"""
         return [t.to_schema() for t in self._tools.values()]
 
-    async def execute(self, name: str, **kwargs) -> str:
+    async def execute(self, tool_name: str, **kwargs) -> str:
         """按名称查找工具并执行，若不存在返回错误字符串。"""
-        tool = self._tools.get(name)
+        tool = self._tools.get(tool_name)
         if tool is None:
-            return f"Unknown tool: {name}"
+            return f"Unknown tool: {tool_name}"
         params = tool.cast_params(kwargs)
         errors = tool.validate_params(params)
         if errors:

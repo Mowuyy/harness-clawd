@@ -111,7 +111,7 @@ class ContextBuilder:
 
     _TASK_GUIDELINES = """\
 ## Task Management
-- Use `task_create` / `task_update` / `task_list` for multi-step work.
+- Use `task_ops` for multi-step work (`action`: create/get/update/list/claim).
 - Use `TodoWrite` for short, single-session checklists.
 - Use the `task` tool to delegate work to a sub-agent.
 - Use `load_skill` to load specialised knowledge before tackling a domain."""

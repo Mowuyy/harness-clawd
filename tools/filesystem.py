@@ -266,13 +266,65 @@ class EditFileTool(Tool):
             return f"Error: {e}"
 
 
+class WorkspaceFileTool(Tool):
+    """文件操作统一入口，通过 action 在 read/write/edit 间路由。"""
+
+    @property
+    def name(self) -> str:
+        return "workspace_file"
+
+    @property
+    def description(self) -> str:
+        return "Workspace file operations with action routing: read/write/edit."
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["read", "write", "edit"],
+                    "description": "File action to perform",
+                },
+                "path": {"type": "string", "description": "File path (relative to workspace)"},
+                "limit": {"type": "integer", "description": "Max lines to return (read)"},
+                "content": {"type": "string", "description": "Content to write (write)"},
+                "old_text": {"type": "string", "description": "Exact text to replace (edit)"},
+                "new_text": {"type": "string", "description": "Replacement text (edit)"},
+            },
+            "required": ["action", "path"],
+        }
+
+    async def execute(
+        self,
+        action: str,
+        path: str,
+        limit: Optional[int] = None,
+        content: str = "",
+        old_text: str = "",
+        new_text: str = "",
+        **kwargs: Any,
+    ) -> str:
+        if action == "read":
+            return run_read(path, limit)
+
+        if action == "write":
+            return run_write(path, content)
+
+        if action == "edit":
+            if not old_text:
+                return "Error: old_text is required for edit"
+            return run_edit(path, old_text, new_text)
+
+        return f"Error: Unknown action '{action}'"
+
+
 # ---------------------------------------------------------------------------
 # 工具实例（供 __init__.py 汇总）
 # ---------------------------------------------------------------------------
 
 TOOLS: list[Tool] = [
     BashTool(),
-    ReadFileTool(),
-    WriteFileTool(),
-    EditFileTool(),
+    WorkspaceFileTool(),
 ]

@@ -29,7 +29,6 @@ from context import (
     ContextBuilder,
     Message,
 )
-from context.context import context as _ctx_store
 from llm import LLMProvider
 from tools import (
     BackgroundManager,
@@ -48,12 +47,6 @@ from tools import (
 load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
-    datefmt="%H:%M:%S",
-)
-
 
 # ---------------------------------------------------------------------------
 class AgentLoop:
@@ -126,11 +119,11 @@ class AgentLoop:
         """启动隔离子代理并返回文本摘要。
 
         工具模式和调度均来自 FILESYSTEM_TOOLS，避免重复定义。
-        Explore 类型仅开放只读工具（bash + read_file）；其它类型另外开放 write_file / edit_file。
+        Explore 类型仅开放只读工具（bash + workspace_file[read]）；其它类型允许完整文件动作。
         """
         # Build lookup from the shared filesystem Tool instances.
         _fs = {t.name: t for t in FILESYSTEM_TOOLS}
-        read_only = {"bash", "read_file"}
+        read_only = {"bash", "workspace_file"}
         allowed = read_only if agent_type == "Explore" else set(_fs)
         sub_schemas = [t.to_schema() for t in FILESYSTEM_TOOLS if t.name in allowed]
 
@@ -155,6 +148,14 @@ class AgentLoop:
                     try:
                         args = tc.function.arguments
                         inp = args if isinstance(args, dict) else json.loads(args)
+                        if (
+                            agent_type == "Explore"
+                            and tc.function.name == "workspace_file"
+                            and inp.get("action") != "read"
+                        ):
+                            out = "Error: Explore subagent can only use workspace_file action=read"
+                            msgs.append(self.msg.tool(tc.id, out))
+                            continue
                         params = tool.cast_params(inp)
                         out = str(await tool.execute(**params))[:self.cfg.tool_result_max_chars]
                     except Exception as exc:
@@ -304,7 +305,6 @@ class AgentLoop:
         通过 asyncio.Lock 序列化并发调用。
         """
         async with self._processing_lock:
-            _ctx_store.reset()
             final_content, updated = await self._run_agent_loop(messages)
             messages[:] = updated
             if final_content:
@@ -344,6 +344,11 @@ class AgentLoop:
 
 
 if __name__ == "__main__":
+    # logging.basicConfig(
+    #     level=logging.INFO,
+    #     format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
+    #     datefmt="%H:%M:%S",
+    # )
     async def _main() -> None:
         from config import Config
         agent = AgentLoop(Config(user_id="test_user"))

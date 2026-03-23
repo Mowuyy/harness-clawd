@@ -367,9 +367,67 @@ class WebFetchTool(Tool):
 # 工具实例工厂
 # ---------------------------------------------------------------------------
 
+class WebTool(Tool):
+    """Web 统一入口，通过 action 在 search/fetch 间路由。"""
+
+    def __init__(self, config: WebSearchConfig | None = None):
+        self.cfg = config or WebSearchConfig()
+        self._search = WebSearchTool(config=self.cfg)
+        self._fetch = WebFetchTool(config=self.cfg)
+
+    @property
+    def name(self) -> str:
+        return "web"
+
+    @property
+    def description(self) -> str:
+        return "Web operations with action routing: search/fetch."
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["search", "fetch"],
+                    "description": "Web action to perform",
+                },
+                "query": {"type": "string", "description": "Search query (search)"},
+                "count": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Result count (search)"},
+                "url": {"type": "string", "description": "Target URL (fetch)"},
+                "extractMode": {
+                    "type": "string",
+                    "enum": ["markdown", "text"],
+                    "description": "Extraction mode (fetch)",
+                },
+                "maxChars": {"type": "integer", "minimum": 100, "description": "Max chars (fetch)"},
+            },
+            "required": ["action"],
+        }
+
+    async def execute(
+        self,
+        action: str,
+        query: str = "",
+        count: int | None = None,
+        url: str = "",
+        extractMode: str = "markdown",
+        maxChars: int | None = None,
+        **kwargs: Any,
+    ) -> str:
+        if action == "search":
+            if not query:
+                return "Error: query is required for search"
+            return await self._search.execute(query=query, count=count)
+        if action == "fetch":
+            if not url:
+                return "Error: url is required for fetch"
+            return await self._fetch.execute(url=url, extractMode=extractMode, maxChars=maxChars)
+        return f"Error: Unknown action '{action}'"
+
 def build_tools(search_config: WebSearchConfig | None = None) -> list[Tool]:
     cfg = search_config or WebSearchConfig()
     return [
-        WebSearchTool(config=cfg),
-        WebFetchTool(config=cfg),
+        WebTool(config=cfg),
     ]

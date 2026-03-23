@@ -1,6 +1,6 @@
 """持久化任务管理工具（基于文件存储）。
 
-涵盖: TaskCreateTool, TaskGetTool, TaskUpdateTool, TaskListTool, ClaimTaskTool
+涵盖: TaskOpsTool（二级意图路由）
 所有工具继承自 tools.base.Tool。
 """
 import json
@@ -105,137 +105,8 @@ class TaskManager:
 # Tool 子类
 # ---------------------------------------------------------------------------
 
-class TaskCreateTool(Tool):
-    """创建持久化文件任务。"""
-
-    def __init__(self, task_mgr: TaskManager):
-        self._mgr = task_mgr
-
-    @property
-    def name(self) -> str:
-        return "task_create"
-
-    @property
-    def description(self) -> str:
-        return "Create a persistent file task."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "subject": {"type": "string", "description": "Task subject"},
-                "description": {"type": "string", "description": "Optional task description"},
-            },
-            "required": ["subject"],
-        }
-
-    async def execute(self, subject: str, description: str = "", **kwargs: Any) -> str:
-        try:
-            return self._mgr.create(subject, description)
-        except Exception as e:
-            return f"Error: {e}"
-
-
-class TaskGetTool(Tool):
-    """按 ID 获取任务详情。"""
-
-    def __init__(self, task_mgr: TaskManager):
-        self._mgr = task_mgr
-
-    @property
-    def name(self) -> str:
-        return "task_get"
-
-    @property
-    def description(self) -> str:
-        return "Get task details by ID."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "task_id": {"type": "integer", "description": "Task ID"},
-            },
-            "required": ["task_id"],
-        }
-
-    async def execute(self, task_id: int, **kwargs: Any) -> str:
-        try:
-            return self._mgr.get(task_id)
-        except Exception as e:
-            return f"Error: {e}"
-
-
-class TaskUpdateTool(Tool):
-    """更新任务状态或依赖关系。"""
-
-    def __init__(self, task_mgr: TaskManager):
-        self._mgr = task_mgr
-
-    @property
-    def name(self) -> str:
-        return "task_update"
-
-    @property
-    def description(self) -> str:
-        return "Update task status or dependencies."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "task_id": {"type": "integer"},
-                "status": {
-                    "type": "string",
-                    "enum": ["pending", "in_progress", "completed", "deleted"],
-                },
-                "add_blocked_by": {"type": "array", "items": {"type": "integer"}},
-                "add_blocks": {"type": "array", "items": {"type": "integer"}},
-            },
-            "required": ["task_id"],
-        }
-
-    async def execute(
-        self,
-        task_id: int,
-        status: Optional[str] = None,
-        add_blocked_by: Optional[list] = None,
-        add_blocks: Optional[list] = None,
-        **kwargs: Any,
-    ) -> str:
-        try:
-            return self._mgr.update(task_id, status, add_blocked_by, add_blocks)
-        except Exception as e:
-            return f"Error: {e}"
-
-
-class TaskListTool(Tool):
-    """列出所有任务。"""
-
-    def __init__(self, task_mgr: TaskManager):
-        self._mgr = task_mgr
-
-    @property
-    def name(self) -> str:
-        return "task_list"
-
-    @property
-    def description(self) -> str:
-        return "List all tasks."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {"type": "object", "properties": {}}
-
-    async def execute(self, **kwargs: Any) -> str:
-        return self._mgr.list_all()
-
-
-class ClaimTaskTool(Tool):
-    """从任务板认领任务。"""
+class TaskOpsTool(Tool):
+    """任务操作统一入口，通过 action 二级路由分发。"""
 
     def __init__(self, task_mgr: TaskManager, owner: str = "lead"):
         self._mgr = task_mgr
@@ -243,25 +114,78 @@ class ClaimTaskTool(Tool):
 
     @property
     def name(self) -> str:
-        return "claim_task"
+        return "task_ops"
 
     @property
     def description(self) -> str:
-        return "Claim a task from the board."
+        return "Task operations with action routing: create/get/update/list/claim."
 
     @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "task_id": {"type": "integer", "description": "Task ID to claim"},
+                "action": {
+                    "type": "string",
+                    "enum": ["create", "get", "update", "list", "claim"],
+                    "description": "Task action to perform",
+                },
+                "subject": {"type": "string", "description": "Task subject (create)"},
+                "description": {"type": "string", "description": "Task description (create)"},
+                "task_id": {"type": "integer", "description": "Task ID (get/update/claim)"},
+                "status": {
+                    "type": "string",
+                    "enum": ["pending", "in_progress", "completed", "deleted"],
+                    "description": "Task status (update)",
+                },
+                "add_blocked_by": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Blocked by IDs (update)",
+                },
+                "add_blocks": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Blocks IDs (update)",
+                },
+                "owner": {"type": "string", "description": "Claim owner override (claim)"},
             },
-            "required": ["task_id"],
+            "required": ["action"],
         }
 
-    async def execute(self, task_id: int, **kwargs: Any) -> str:
+    async def execute(
+        self,
+        action: str,
+        subject: str = "",
+        description: str = "",
+        task_id: Optional[int] = None,
+        status: Optional[str] = None,
+        add_blocked_by: Optional[list] = None,
+        add_blocks: Optional[list] = None,
+        owner: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         try:
-            return self._mgr.claim(task_id, self._owner)
+            if action == "create":
+                if not subject:
+                    return "Error: subject is required for create"
+                return self._mgr.create(subject, description)
+            if action == "get":
+                if task_id is None:
+                    return "Error: task_id is required for get"
+                return self._mgr.get(task_id)
+            if action == "update":
+                if task_id is None:
+                    return "Error: task_id is required for update"
+                return self._mgr.update(task_id, status, add_blocked_by, add_blocks)
+            if action == "list":
+                return self._mgr.list_all()
+            if action == "claim":
+                if task_id is None:
+                    return "Error: task_id is required for claim"
+                claim_owner = owner or self._owner
+                return self._mgr.claim(task_id, claim_owner)
+            return f"Error: Unknown action '{action}'"
         except Exception as e:
             return f"Error: {e}"
 
@@ -272,9 +196,5 @@ class ClaimTaskTool(Tool):
 
 def build_tools(task_mgr: TaskManager, owner: str = "lead") -> list[Tool]:
     return [
-        TaskCreateTool(task_mgr),
-        TaskGetTool(task_mgr),
-        TaskUpdateTool(task_mgr),
-        TaskListTool(task_mgr),
-        ClaimTaskTool(task_mgr, owner),
+        TaskOpsTool(task_mgr, owner),
     ]

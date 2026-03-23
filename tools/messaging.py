@@ -1,7 +1,6 @@
 """团队消息通信工具，含关机协议与计划审批。
 
-涵盖: SendMessageTool, ReadInboxTool, BroadcastTool,
-       ShutdownRequestTool, PlanApprovalTool, IdleTool
+涵盖: MessagingTool（二级意图路由）
 所有工具继承自 tools.base.Tool。
 """
 import json
@@ -116,171 +115,103 @@ class ProtocolManager:
 # Tool 子类
 # ---------------------------------------------------------------------------
 
-class SendMessageTool(Tool):
-    """向队友发送消息。"""
+class MessagingTool(Tool):
+    """通信统一入口，通过 action 二级路由分发。"""
 
-    def __init__(self, bus: MessageBus, lead_name: str = "lead"):
+    def __init__(
+        self,
+        bus: MessageBus,
+        protocol: ProtocolManager,
+        member_names_fn: Callable[[], list],
+        lead_name: str = "lead",
+    ):
         self._bus = bus
-        self._lead = lead_name
-
-    @property
-    def name(self) -> str:
-        return "send_message"
-
-    @property
-    def description(self) -> str:
-        return "Send a message to a teammate."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "to": {"type": "string", "description": "Recipient name"},
-                "content": {"type": "string", "description": "Message content"},
-                "msg_type": {
-                    "type": "string",
-                    "enum": list(VALID_MSG_TYPES),
-                    "description": "Message type",
-                },
-            },
-            "required": ["to", "content"],
-        }
-
-    async def execute(
-        self, to: str, content: str, msg_type: str = "message", **kwargs: Any
-    ) -> str:
-        return self._bus.send(self._lead, to, content, msg_type)
-
-
-class ReadInboxTool(Tool):
-    """读取并清空 lead 的收件箱。"""
-
-    def __init__(self, bus: MessageBus, lead_name: str = "lead"):
-        self._bus = bus
-        self._lead = lead_name
-
-    @property
-    def name(self) -> str:
-        return "read_inbox"
-
-    @property
-    def description(self) -> str:
-        return "Read and drain the lead's inbox."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {"type": "object", "properties": {}}
-
-    async def execute(self, **kwargs: Any) -> str:
-        return json.dumps(self._bus.read_inbox(self._lead), indent=2, ensure_ascii=False)
-
-
-class BroadcastTool(Tool):
-    """向所有队友广播消息。"""
-
-    def __init__(self, bus: MessageBus, member_names_fn: Callable[[], list], lead_name: str = "lead"):
-        self._bus = bus
+        self._protocol = protocol
         self._members_fn = member_names_fn
         self._lead = lead_name
 
     @property
     def name(self) -> str:
-        return "broadcast"
+        return "messaging"
 
     @property
     def description(self) -> str:
-        return "Send message to all teammates."
+        return (
+            "Messaging operations with action routing: "
+            "send/read_inbox/broadcast/shutdown_request/plan_approval/idle."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "content": {"type": "string", "description": "Broadcast message content"},
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "send",
+                        "read_inbox",
+                        "broadcast",
+                        "shutdown_request",
+                        "plan_approval",
+                        "idle",
+                    ],
+                    "description": "Messaging action to perform",
+                },
+                "to": {"type": "string", "description": "Recipient name (send)"},
+                "content": {"type": "string", "description": "Message content (send/broadcast)"},
+                "msg_type": {
+                    "type": "string",
+                    "enum": list(VALID_MSG_TYPES),
+                    "description": "Message type (send)",
+                },
+                "teammate": {"type": "string", "description": "Teammate name (shutdown_request)"},
+                "request_id": {"type": "string", "description": "Plan request ID (plan_approval)"},
+                "approve": {"type": "boolean", "description": "Approve or reject (plan_approval)"},
+                "feedback": {"type": "string", "description": "Review feedback (plan_approval)"},
             },
-            "required": ["content"],
+            "required": ["action"],
         }
 
-    async def execute(self, content: str, **kwargs: Any) -> str:
-        return self._bus.broadcast(self._lead, content, self._members_fn())
+    async def execute(
+        self,
+        action: str,
+        to: str = "",
+        content: str = "",
+        msg_type: str = "message",
+        teammate: str = "",
+        request_id: str = "",
+        approve: bool = False,
+        feedback: str = "",
+        **kwargs: Any,
+    ) -> str:
+        if action == "send":
+            if not to or not content:
+                return "Error: to and content are required for send"
+            return self._bus.send(self._lead, to, content, msg_type)
 
+        if action == "read_inbox":
+            return json.dumps(self._bus.read_inbox(self._lead), indent=2, ensure_ascii=False)
 
-class ShutdownRequestTool(Tool):
-    """请求队友关闭。"""
+        if action == "broadcast":
+            if not content:
+                return "Error: content is required for broadcast"
+            return self._bus.broadcast(self._lead, content, self._members_fn())
 
-    def __init__(self, protocol: ProtocolManager):
-        self._protocol = protocol
+        if action == "shutdown_request":
+            if not teammate:
+                return "Error: teammate is required for shutdown_request"
+            return self._protocol.handle_shutdown_request(teammate)
 
-    @property
-    def name(self) -> str:
-        return "shutdown_request"
+        if action == "plan_approval":
+            if not request_id:
+                return "Error: request_id is required for plan_approval"
+            return self._protocol.handle_plan_review(request_id, approve, feedback)
 
-    @property
-    def description(self) -> str:
-        return "Request a teammate to shut down."
+        if action == "idle":
+            return "Lead does not idle."
 
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "teammate": {"type": "string", "description": "Teammate name to shut down"},
-            },
-            "required": ["teammate"],
-        }
-
-    async def execute(self, teammate: str, **kwargs: Any) -> str:
-        return self._protocol.handle_shutdown_request(teammate)
-
-
-class PlanApprovalTool(Tool):
-    """批准或拒绝队友的计划。"""
-
-    def __init__(self, protocol: ProtocolManager):
-        self._protocol = protocol
-
-    @property
-    def name(self) -> str:
-        return "plan_approval"
-
-    @property
-    def description(self) -> str:
-        return "Approve or reject a teammate's plan."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "request_id": {"type": "string"},
-                "approve": {"type": "boolean"},
-                "feedback": {"type": "string"},
-            },
-            "required": ["request_id", "approve"],
-        }
-
-    async def execute(self, request_id: str, approve: bool, feedback: str = "", **kwargs: Any) -> str:
-        return self._protocol.handle_plan_review(request_id, approve, feedback)
-
-
-class IdleTool(Tool):
-    """进入空闲状态（Lead 不使用此工具）。"""
-
-    @property
-    def name(self) -> str:
-        return "idle"
-
-    @property
-    def description(self) -> str:
-        return "Enter idle state."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {"type": "object", "properties": {}}
-
-    async def execute(self, **kwargs: Any) -> str:
-        return "Lead does not idle."
+        return f"Error: Unknown action '{action}'"
 
 
 # ---------------------------------------------------------------------------
@@ -294,10 +225,5 @@ def build_tools(
     lead_name: str = "lead",
 ) -> list[Tool]:
     return [
-        SendMessageTool(bus, lead_name),
-        ReadInboxTool(bus, lead_name),
-        BroadcastTool(bus, member_names_fn, lead_name),
-        ShutdownRequestTool(protocol),
-        PlanApprovalTool(protocol),
-        IdleTool(),
+        MessagingTool(bus, protocol, member_names_fn, lead_name),
     ]

@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 # ---------------------------------------------------------------------------
 # 嵌套配置模型
@@ -68,7 +68,7 @@ class Config(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
 
     # ------------------------------------------------------------ Loop limits
-    max_iterations: int = Field(default_factory=lambda: int(os.getenv("HARNESS_MAX_ITERATIONS", "40")))
+    max_iterations: int = Field(default_factory=lambda: int(os.getenv("HARNESS_MAX_ITERATIONS", "100")))
     sub_max_iter: int = Field(default_factory=lambda: int(os.getenv("HARNESS_SUB_MAX_ITER", "30")))
     tool_result_max_chars: int = Field(default_factory=lambda: int(os.getenv("HARNESS_TOOL_RESULT_MAX_CHARS", "16000")))
     token_threshold: int = Field(default_factory=lambda: int(os.getenv("HARNESS_TOKEN_THRESHOLD", "100000")))
@@ -87,6 +87,14 @@ class Config(BaseModel):
     workdir_base: Path = Field(
         default_factory=lambda: Path(os.getenv("HARNESS_WORKDIR", str(Path.cwd() / "workspace")))
     )
+
+    @field_validator("user_id", mode="before")
+    @classmethod
+    def _reset_context_before_user_id(cls, v: str) -> str:
+        """user_id 赋值前重置协程上下文，确保新请求不会污染上一个用户的状态。"""
+        from context.context import context as _ctx_store  # noqa: PLC0415
+        _ctx_store.reset()
+        return v
 
     @computed_field  # type: ignore[misc]
     @property

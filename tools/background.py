@@ -1,6 +1,6 @@
 """后台进程管理工具。
 
-涵盖: BackgroundRunTool, CheckBackgroundTool
+涵盖: BackgroundTool（二级意图路由）
 所有工具继承自 tools.base.Tool。
 后台任务使用 asyncio.create_task + asyncio.create_subprocess_shell 实现。
 """
@@ -106,63 +106,52 @@ class BackgroundManager:
 # Tool 子类
 # ---------------------------------------------------------------------------
 
-class BackgroundRunTool(Tool):
-    """在后台异步任务中运行命令。"""
+class BackgroundTool(Tool):
+    """后台任务统一入口，通过 action 二级路由分发。"""
 
     def __init__(self, bg_mgr: BackgroundManager):
         self._mgr = bg_mgr
 
     @property
     def name(self) -> str:
-        return "background_run"
+        return "background"
 
     @property
     def description(self) -> str:
-        return "Run a shell command as an async background task. Returns a task_id immediately."
+        return "Background task operations with action routing: run/check."
 
     @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "command": {"type": "string", "description": "Shell command to run"},
-                "timeout": {
-                    "type": "integer",
-                    "description": "Timeout in seconds (default 120)",
+                "action": {
+                    "type": "string",
+                    "enum": ["run", "check"],
+                    "description": "Background action to perform",
                 },
+                "command": {"type": "string", "description": "Shell command (run)"},
+                "timeout": {"type": "integer", "description": "Timeout seconds for run"},
+                "task_id": {"type": "string", "description": "Task ID (check, optional)"},
             },
-            "required": ["command"],
+            "required": ["action"],
         }
 
-    async def execute(self, command: str, timeout: int = 120, **kwargs: Any) -> str:
-        return await self._mgr.run(command, timeout)
-
-
-class CheckBackgroundTool(Tool):
-    """检查后台任务状态。"""
-
-    def __init__(self, bg_mgr: BackgroundManager):
-        self._mgr = bg_mgr
-
-    @property
-    def name(self) -> str:
-        return "check_background"
-
-    @property
-    def description(self) -> str:
-        return "Check the status of a background task by task_id, or list all tasks."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "task_id": {"type": "string", "description": "Background task ID (omit to list all)"},
-            },
-        }
-
-    async def execute(self, task_id: Optional[str] = None, **kwargs: Any) -> str:
-        return await self._mgr.check(task_id)
+    async def execute(
+        self,
+        action: str,
+        command: str = "",
+        timeout: int = 120,
+        task_id: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
+        if action == "run":
+            if not command:
+                return "Error: command is required for run"
+            return await self._mgr.run(command, timeout)
+        if action == "check":
+            return await self._mgr.check(task_id)
+        return f"Error: Unknown action '{action}'"
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +160,5 @@ class CheckBackgroundTool(Tool):
 
 def build_tools(bg_mgr: BackgroundManager) -> list[Tool]:
     return [
-        BackgroundRunTool(bg_mgr),
-        CheckBackgroundTool(bg_mgr),
+        BackgroundTool(bg_mgr),
     ]
