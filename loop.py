@@ -237,7 +237,6 @@ class AgentLoop:
             messages.append(self.msg.from_api(resp_msg))
 
             used_todo = False
-            manual_compress = False
 
             for tc in resp_msg.tool_calls or []:
                 tool_name = tc.function.name
@@ -250,10 +249,7 @@ class AgentLoop:
                 hint = self._tool_hint(tool_name, inp)
 
                 try:
-                    if tool_name == "compress":
-                        manual_compress = True
-                        output: str = "Compressing..."
-                    elif tool_name == "task":
+                    if tool_name == "task":
                         output = await self._run_subagent(
                             inp.get("prompt", ""),
                             inp.get("agent_type", "Explore"),
@@ -283,12 +279,6 @@ class AgentLoop:
             rounds_without_todo = 0 if used_todo else rounds_without_todo + 1
             if self.todo.has_open_items() and rounds_without_todo >= 3:
                 messages.append(self.msg.user("<reminder>Update your todos.</reminder>"))
-
-            # s06: manual compress
-            if manual_compress:
-                logger.info("manual compact triggered")
-                print("[manual compact]")
-                messages = await self.compactor.auto_compact(messages)
 
         if final_content is None and iteration >= self.cfg.max_iterations:
             logger.warning("max_iterations (%d) reached", self.cfg.max_iterations)

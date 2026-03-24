@@ -127,7 +127,7 @@ class TeammateManager:
         self.model = llm.model
         self.poll_interval = poll_interval
         self.idle_timeout = idle_timeout
-        self.team_dir.mkdir(exist_ok=True)
+        self.team_dir.mkdir(parents=True, exist_ok=True)
         self.config_path = self.team_dir / "config.json"
         self.config = self._load()
 
@@ -213,7 +213,8 @@ class TeammateManager:
         # BashTool / WorkspaceFileTool resolve to the correct workdir.
         # Teammates are long-lived across sessions, so they use workdir
         # directly (not a session-specific temp dir).
-        workdir = self.team_dir.parent
+        # team_dir = workdir/.sessions/team → .parent.parent = workdir
+        workdir = self.team_dir.parent.parent
         _init_filesystem(workdir)
 
         team_name = self.config["team_name"]
