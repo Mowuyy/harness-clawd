@@ -243,27 +243,6 @@ class LoadSkillTool(Tool):
     async def execute(self, name: str, **kwargs: Any) -> str:
         return self._loader.load(name)
 
-
-class CompressTool(Tool):
-    """手动压缩对话上下文（由 loop.py 特殊处理）。"""
-
-    @property
-    def name(self) -> str:
-        return "compress"
-
-    @property
-    def description(self) -> str:
-        return "Manually compress conversation context."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {"type": "object", "properties": {}}
-
-    async def execute(self, **kwargs: Any) -> str:
-        # 实际压缩逻辑由 agent_loop 处理，此处返回触发信号
-        return "Compressing..."
-
-
 class TaskTool(Tool):
     """派生子 Agent 进行隔离探索或工作（由 loop.py 特殊处理为 async）。"""
 
@@ -302,6 +281,5 @@ class TaskTool(Tool):
 def build_tools(skill_loader: SkillLoader) -> list[Tool]:
     return [
         LoadSkillTool(skill_loader),
-        CompressTool(),
         TaskTool(),
     ]

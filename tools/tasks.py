@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .base import Tool
+from config import get_session_dir
 
 
 # ---------------------------------------------------------------------------
@@ -16,8 +17,28 @@ from .base import Tool
 
 class TaskManager:
     def __init__(self, tasks_dir: Path):
-        self.tasks_dir = tasks_dir
-        self.tasks_dir.mkdir(exist_ok=True)
+        # 不在构造时创建目录，延迟到实际访问时（lazy），
+        # 避免在无任务卿限的情况下创建多余目录。
+        self._default_tasks_dir = tasks_dir
+
+    @property
+    def tasks_dir(self) -> Path:
+        """Return the tasks directory for the current context.
+
+        When a session is active the tasks are stored under
+        ``session_dir/tasks`` so each conversation gets its own
+        isolated task list.  Falls back to the shared tasks dir
+        (``sessions/shared/tasks``) when no session is active
+        (e.g. during teammate background loops).
+        """
+        session_dir = get_session_dir()
+        if session_dir is not None:
+            d = session_dir / "tasks"
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+        # lazy-create shared dir only when actually needed
+        self._default_tasks_dir.mkdir(parents=True, exist_ok=True)
+        return self._default_tasks_dir
 
     def _next_id(self) -> int:
         ids = [int(f.stem.split("_")[1]) for f in self.tasks_dir.glob("task_*.json")]

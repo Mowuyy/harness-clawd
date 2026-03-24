@@ -10,6 +10,7 @@ from . import filesystem, todos, tasks, background, messaging, team, skills, web
 # Re-export managers for loop.py dependency injection
 from .filesystem import (
     init as init_filesystem,
+    cleanup_empty_session,
     TOOLS as FILESYSTEM_TOOLS,
 )
 from .todos import TodoManager
@@ -102,6 +103,7 @@ __all__ = [
     "FILESYSTEM_TOOLS",
     # filesystem init
     "init_filesystem",
+    "cleanup_empty_session",
     # factory
     "build_registry",
 ]

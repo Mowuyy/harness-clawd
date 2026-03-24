@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import Tool
-from .filesystem import TOOLS as FILESYSTEM_TOOLS
+from .filesystem import TOOLS as FILESYSTEM_TOOLS, init as _init_filesystem
 from context.message import Message
 
 
@@ -122,7 +122,7 @@ class TeammateManager:
         self.bus = bus
         self.task_mgr = task_mgr
         self.team_dir = team_dir
-        self.tasks_dir = tasks_dir
+        self.tasks_dir = tasks_dir  # shared pool for teammate task claiming
         self.llm = llm
         self.model = llm.model
         self.poll_interval = poll_interval
@@ -209,6 +209,13 @@ class TeammateManager:
         return registry, schemas
 
     async def _loop(self, name: str, role: str, prompt: str) -> None:
+        # Seed the ContextVar for this teammate's event loop so that
+        # BashTool / WorkspaceFileTool resolve to the correct workdir.
+        # Teammates are long-lived across sessions, so they use workdir
+        # directly (not a session-specific temp dir).
+        workdir = self.team_dir.parent
+        _init_filesystem(workdir)
+
         team_name = self.config["team_name"]
         sys_prompt = (
             f"You are '{name}', role: {role}, team: {team_name}. "

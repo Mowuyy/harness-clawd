@@ -113,15 +113,35 @@ class Config(BaseModel):
 
     @property
     def team_dir(self) -> Path:
-        return self.workdir / ".team"
+        return self.sessions_dir / "team"
 
     @property
     def inbox_dir(self) -> Path:
         return self.team_dir / "inbox"
 
     @property
-    def tasks_dir(self) -> Path:
-        return self.workdir / ".tasks"
+    def sessions_dir(self) -> Path:
+        """Base directory for per-conversation session subdirs."""
+        return self.workdir / ".sessions"
+
+    @property
+    def session_dir(self) -> "Path | None":
+        """当前对话的 session 目录（由 init_session 设置，无 session 时返回 None）。"""
+        return get_session_dir()
+
+    def init_session(self, session_id: str | None = None) -> "Path":
+        """为本次对话在 sessions_dir 下创建 UUID 子目录并写入上下文。
+
+        等同于 tools.filesystem.init_session(self.sessions_dir, session_id)，
+        统一由 Config 作为入口，外部代码不再直接依赖 tools.filesystem。
+        """
+        from tools.filesystem import init_session as _init_session  # noqa: PLC0415
+        return _init_session(self.sessions_dir, session_id)
+
+    @property
+    def shared_tasks_dir(self) -> Path:
+        """Teammate 共享任务池（与 per-session 任务目录区分）。"""
+        return self.sessions_dir / "shared" / "tasks"
 
     @property
     def skills_dir(self) -> Path:
@@ -129,7 +149,7 @@ class Config(BaseModel):
 
     @property
     def transcript_dir(self) -> Path:
-        return self.workdir / ".transcripts"
+        return self.workdir / "transcripts"
 
     # --------------------------------------------------------- Factory helpers
     @classmethod
@@ -141,6 +161,21 @@ class Config(BaseModel):
     def from_env(cls, **overrides) -> "Config":
         """Return a Config with selective overrides on top of env defaults."""
         return cls(**overrides)
+
+
+# ---------------------------------------------------------------------------
+# 模块级便捷函数 — 工具层（tools/）统一通过此处访问 session_dir，
+# 避免直接依赖 tools.filesystem 的内部实现细节。
+# ---------------------------------------------------------------------------
+
+def get_session_dir() -> "Path | None":
+    """返回当前协程上下文中活跃的 session 目录；无 session 时返回 None。
+
+    延迟导入 tools.filesystem 以避免循环依赖。工具层（tasks.py / background.py 等）
+    应从此模块导入，而非直接从 tools.filesystem 导入。
+    """
+    from tools.filesystem import get_session_dir as _get  # noqa: PLC0415
+    return _get()
 
 
 # ---------------------------------------------------------------------------

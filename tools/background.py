@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .base import Tool
+from config import get_session_dir
 
 
 # ---------------------------------------------------------------------------
@@ -40,11 +41,14 @@ class BackgroundManager:
         """Execute command asynchronously; update task state on completion."""
         proc: asyncio.subprocess.Process | None = None
         try:
+            # Use session dir if active (ContextVar is copied into the task by asyncio),
+            # falling back to the workdir set at manager construction time.
+            cwd = get_session_dir() or self.workdir
             proc = await asyncio.create_subprocess_shell(
                 command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=self.workdir,
+                cwd=cwd,
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
             output = (stdout.decode() + stderr.decode()).strip()[:50000]

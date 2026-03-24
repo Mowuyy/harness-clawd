@@ -41,6 +41,7 @@ from tools import (
     TodoManager,
     ToolRegistry,
     build_registry,
+    cleanup_empty_session,
     init_filesystem,
 )
 
@@ -67,7 +68,7 @@ class AgentLoop:
         # Convenience aliases from config
         self._team_dir = self.cfg.team_dir
         self._inbox_dir = self.cfg.inbox_dir
-        self._tasks_dir = self.cfg.tasks_dir
+        self._tasks_dir = self.cfg.shared_tasks_dir
         self._skills_dir = self.cfg.skills_dir
         self._transcript_dir = self.cfg.transcript_dir
 
@@ -296,15 +297,20 @@ class AgentLoop:
                 "without completing the task.  Try breaking it into smaller steps."
             )
 
+        # 无论正常结束还是达到上限，均返回结果
+        # 若本次对话未产生任何文件，清除空的 session 目录
+        cleanup_empty_session()
         return final_content, messages
 
     # Public API
     async def process(self, messages: list) -> None:
         """处理单个用户轮次，原地修改 messages。
 
-        通过 asyncio.Lock 序列化并发调用。
+        每次调用为本次对话创建隔离的 session 目录（workdir/.sessions/{uuid}），
+        所有 write 操作均落到该目录。通过 asyncio.Lock 序列化并发调用。
         """
         async with self._processing_lock:
+            self.cfg.init_session()
             final_content, updated = await self._run_agent_loop(messages)
             messages[:] = updated
             if final_content:
